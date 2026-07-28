@@ -46,8 +46,9 @@ export async function createRoom(input: {
 
     return { roomCode: code, participantId: hostId }
   } catch (err) {
-    console.error('[createRoom]', err)
-    return { roomCode: '', participantId: '', error: 'Failed to create room' }
+    console.error('[createRoom] Error:', err instanceof Error ? err.message : String(err))
+    console.error('[createRoom] Full error:', err)
+    return { roomCode: '', participantId: '', error: String(err instanceof Error ? err.message : err) }
   }
 }
 

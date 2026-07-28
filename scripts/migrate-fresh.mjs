@@ -6,12 +6,21 @@ const pool = new Pool({
 
 async function runMigrations() {
   try {
-    console.log('🔄 Running database schema creation...')
+    console.log('🔄 Running clean database migration...')
 
-    // Get the current database connection
     const client = await pool.connect()
 
     try {
+      // Drop old incompatible tables in correct order (respecting foreign keys)
+      console.log('Dropping old tables...')
+      await client.query('DROP TABLE IF EXISTS chat_messages')
+      await client.query('DROP TABLE IF EXISTS players_in_room')
+      await client.query('DROP TABLE IF EXISTS bids')
+      await client.query('DROP TABLE IF EXISTS team_players')
+      await client.query('DROP TABLE IF EXISTS participants')
+      await client.query('DROP TABLE IF EXISTS rooms')
+      console.log('✓ Old tables dropped')
+
       // Create countries table
       await client.query(`
         CREATE TABLE IF NOT EXISTS countries (
@@ -94,7 +103,7 @@ async function runMigrations() {
       `)
       console.log('✓ Created player_attributes table')
 
-      // Create rooms table (new schema)
+      // Create rooms table
       await client.query(`
         CREATE TABLE IF NOT EXISTS rooms (
           id SERIAL PRIMARY KEY,
@@ -146,7 +155,7 @@ async function runMigrations() {
       `)
       console.log('✓ Created team_players table')
 
-      // Create bids table (new schema)
+      // Create bids table
       await client.query(`
         CREATE TABLE IF NOT EXISTS bids (
           id SERIAL PRIMARY KEY,
@@ -159,7 +168,7 @@ async function runMigrations() {
       `)
       console.log('✓ Created bids table')
 
-      // Create chat_messages table (new schema)
+      // Create chat_messages table
       await client.query(`
         CREATE TABLE IF NOT EXISTS chat_messages (
           id SERIAL PRIMARY KEY,

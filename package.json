@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "migrate": "node --env-file-if-exists=/vercel/share/.env.project scripts/migrate.mjs",
+    "migrate:fresh": "node --env-file-if-exists=/vercel/share/.env.project scripts/migrate-fresh.mjs",
     "seed": "node --env-file-if-exists=/vercel/share/.env.project -r esbuild-register scripts/seed.ts",
     "seed:fifa": "node --env-file-if-exists=/vercel/share/.env.project scripts/seed-fifa.mjs"
   },
