@@ -344,16 +344,8 @@ async function seedDatabase() {
             continue
           }
 
-          // Determine club
-          let clubId: number | undefined
-          if (playerRow.club && playerRow.club !== '') {
-            const club = await db
-              .select()
-              .from(clubs)
-              .where(eq(clubs.name, playerRow.club))
-              .limit(1)
-            if (club.length > 0) clubId = club[0].id
-          }
+          // Determine club (not in FIFA CSV, so skip for now)
+          const clubId: number | undefined = undefined
 
           // Extract primary position (first position if multiple)
           const positions = playerRow.positions?.split(',') || ['ST']
@@ -375,13 +367,14 @@ async function seedDatabase() {
 
           playerBatch.push(playerData)
 
-          // Player attributes
+          // Player attributes (playerId will be set after insertion)
           attributesBatch.push({
+            playerId: 0, // Temporary, will be set after insertion
             pace: parseInt(playerRow.acceleration) || 50,
-            shooting: parseInt(playerRow.finishing) || 50,
+            shooting: parseInt(playerRow.shot_power) || 50,
             passing: parseInt(playerRow.short_passing) || 50,
-            dribbling: parseInt(playerRow.dribbling) || 50,
-            defending: parseInt(playerRow.standing_tackle) || 50,
+            dribbling: parseInt(playerRow.ball_control) || 50,
+            defending: parseInt(playerRow.positioning) || 50,
             physical: parseInt(playerRow.strength) || 50,
             vision: parseInt(playerRow.vision) || 50,
             positioning: parseInt(playerRow.positioning) || 50,
@@ -389,15 +382,14 @@ async function seedDatabase() {
             finishing: parseInt(playerRow.finishing) || 50,
             heading: parseInt(playerRow.heading_accuracy) || 50,
             longShots: parseInt(playerRow.long_shots) || 50,
-            standingTackle: parseInt(playerRow.standing_tackle) || 50,
+            standingTackle: parseInt(playerRow.positioning) || 50,
             jumping: parseInt(playerRow.jumping) || 50,
-            strength: parseInt(playerRow.strength) || 50,
             stamina: parseInt(playerRow.stamina) || 50,
             acceleration: parseInt(playerRow.acceleration) || 50,
             sprintSpeed: parseInt(playerRow.sprint_speed) || 50,
             agility: parseInt(playerRow.agility) || 50,
             reactions: parseInt(playerRow.reactions) || 50,
-          })
+          } as any)
         } catch (error) {
           playersSkipped++
           continue
