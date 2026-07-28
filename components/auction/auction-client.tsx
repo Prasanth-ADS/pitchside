@@ -10,6 +10,7 @@ import { BidPanel } from './bid-panel'
 import { TeamSidebar } from './team-sidebar'
 import { ChatPanel } from './chat-panel'
 import { BidHistoryList } from './bid-history-list'
+import { HostControls } from './host-controls'
 import type { RoomSnapshot } from '@/lib/auction-store'
 
 interface Props {
@@ -60,6 +61,7 @@ export function AuctionClient({ initialSnapshot, roomCode }: Props) {
           <div className="flex-1 flex flex-col items-center justify-center p-4 gap-4 overflow-y-auto">
             <PlayerCard />
             <BidPanel roomCode={roomCode} myId={myId} isHost={isHost} />
+            {isHost && <HostControls roomCode={roomCode} myId={myId} />}
           </div>
           <BidHistoryList />
         </main>

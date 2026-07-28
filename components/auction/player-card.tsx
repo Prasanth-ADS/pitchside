@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState, useRef } from 'react'
 import { useAuctionStore } from '@/lib/auction-store'
 import { POSITION_COLORS, getRatingColor, getRatingLabel } from '@/lib/utils/format'
 
@@ -28,7 +29,23 @@ function StatBar({ value, color }: { value: number; color: string }) {
 }
 
 export function PlayerCard() {
-  const { currentPlayer } = useAuctionStore()
+  const { currentPlayer, timerEnd } = useAuctionStore()
+  const [timeLeft, setTimeLeft] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    if (!timerEnd) { setTimeLeft(0); return }
+
+    function tick() {
+      if (!timerEnd) return
+      const remaining = Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000))
+      setTimeLeft(remaining)
+    }
+    tick()
+    intervalRef.current = setInterval(tick, 200)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [timerEnd])
 
   if (!currentPlayer) {
     return (
@@ -59,7 +76,7 @@ export function PlayerCard() {
     >
       {/* Top band: rating + position + meta */}
       <div
-        className="px-5 pt-5 pb-3 flex items-start justify-between"
+        className="px-5 pt-5 pb-3 flex items-start justify-between relative"
         style={{ background: `linear-gradient(135deg, ${ratingColor}18, transparent 70%)` }}
       >
         <div>
@@ -80,6 +97,11 @@ export function PlayerCard() {
             style={{ borderColor: `${ratingColor}40`, color: ratingColor }}>
             {getRatingLabel(p.overallRating)}
           </div>
+          {timerEnd && (
+            <div className={`text-xs font-bold mt-2 px-2 py-1 rounded-full inline-block ${timeLeft <= 10 && timeLeft > 0 ? 'bg-red-500/20 text-red-400 animate-pulse' : 'bg-amber-500/20 text-amber-400'}`}>
+              ⏱️ {timeLeft}s
+            </div>
+          )}
         </div>
       </div>
 
