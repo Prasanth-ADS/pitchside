@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "seed": "node --env-file-if-exists=/vercel/share/.env.project -r esbuild-register scripts/seed.ts"
+    "migrate": "node --env-file-if-exists=/vercel/share/.env.project scripts/migrate.mjs",
+    "seed": "node --env-file-if-exists=/vercel/share/.env.project -r esbuild-register scripts/seed.ts",
+    "seed:fifa": "node --env-file-if-exists=/vercel/share/.env.project scripts/seed-fifa.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
