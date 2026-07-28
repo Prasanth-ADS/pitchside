@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCurrency, getRatingColor, POSITION_COLORS, POSITION_ORDER } from '@/lib/utils/format'
+import { ExportControls } from './export-controls'
 import type { RoomSnapshot } from '@/lib/auction-store'
 import type { PlayerWithDetails } from '@/lib/db/schema'
 
@@ -30,7 +31,7 @@ export function ResultsClient({ snapshot, roomCode }: Props) {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-border px-6 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -43,11 +44,14 @@ export function ResultsClient({ snapshot, roomCode }: Props) {
           <span className="text-muted-foreground text-sm">{room?.name}</span>
           <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">FINAL</Badge>
         </div>
-        <Link href="/">
-          <Button variant="outline" size="sm" className="border-border text-xs">
-            New Room
-          </Button>
-        </Link>
+        <div className="flex items-center gap-3 ml-auto">
+          <ExportControls snapshot={snapshot} roomCode={roomCode} />
+          <Link href="/">
+            <Button variant="outline" size="sm" className="border-border text-xs">
+              New Room
+            </Button>
+          </Link>
+        </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
