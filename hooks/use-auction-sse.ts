@@ -36,9 +36,6 @@ export function useAuctionSSE(roomCode: string, participantId: string) {
         if (cancelled) return
         try {
           const parsed = JSON.parse(event.data) as { type: SSEEventType; payload: unknown; ts: number }
-          if (parsed.type !== 'auction:timer_update') {
-            console.log('[v0] SSE Event:', parsed.type, parsed.payload)
-          }
           handleEvent(parsed.type, parsed.payload, store)
         } catch {
           // non-JSON keep-alive comments pass through as empty strings — safe to ignore

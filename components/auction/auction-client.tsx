@@ -51,20 +51,12 @@ export function AuctionClient({ initialSnapshot, roomCode }: Props) {
   useEffect(() => {
     if (!isHost || !myId || !timerEnd || !currentPlayer || room?.status !== 'active') return
 
-    const delay = Math.max(0, timerEnd - Date.now()) + 250
-    console.log('[v0] Setting up timer callback, delay:', delay, 'ms, player:', currentPlayer.name)
     finalizedPlayerRef.current = null
     const timeout = setTimeout(async () => {
-      console.log('[v0] Timer expired, calling finalizePlayerSale')
-      if (finalizedPlayerRef.current === currentPlayer.id) {
-        console.log('[v0] Already finalized this player')
-        return
-      }
+      if (finalizedPlayerRef.current === currentPlayer.id) return
       finalizedPlayerRef.current = currentPlayer.id
-      console.log('[v0] Calling finalizePlayerSale server action...')
-      const result = await finalizePlayerSale({ roomCode, hostParticipantId: myId })
-      console.log('[v0] Server action returned:', result)
-    }, delay)
+      await finalizePlayerSale({ roomCode, hostParticipantId: myId })
+    }, Math.max(0, timerEnd - Date.now()) + 250)
 
     return () => clearTimeout(timeout)
   }, [currentPlayer?.id, isHost, myId, room?.status, roomCode, timerEnd])
