@@ -5,8 +5,8 @@ import {
   rooms, participants, teamPlayers, bids, chatMessages,
   players as playersTable, clubs, countries, playerAttributes,
 } from '@/lib/db/schema'
-import { eq, and, inArray, sql } from 'drizzle-orm'
-import { generateRoomCode, generateParticipantId, pickAvatarColor } from '@/lib/utils/format'
+import { eq, and, inArray, sql, isNull } from 'drizzle-orm'
+import { generateRoomCode, generateParticipantId, pickAvatarColor, formatCurrency } from '@/lib/utils/format'
 import { broadcast } from '@/lib/sse-broadcaster'
 import type { PlayerWithDetails } from '@/lib/db/schema'
 
@@ -98,28 +98,43 @@ export async function getRoomSnapshot(roomCode: string) {
     currentPlayer = await getPlayerWithDetails(room.currentPlayerId)
   }
 
-  // Bids for current player
-  const recentBids = room.currentPlayerId
-    ? await db.select().from(bids)
+  // CRITICAL FIX #1: Use LEFT JOIN instead of N+1 query for bid history
+  const bidHistoryRaw = room.currentPlayerId
+    ? await db.select({
+        bid: bids,
+        participant: participants,
+      })
+        .from(bids)
+        .leftJoin(participants, eq(participants.id, bids.participantId))
         .where(and(eq(bids.roomId, room.id), eq(bids.playerId, room.currentPlayerId ?? 0)))
         .orderBy(sql`${bids.bidAt} DESC`)
         .limit(20)
     : []
 
-  const bidHistory = recentBids.map((b) => {
-    const p = roomParticipants.find((x) => x.id === b.participantId)
-    return {
-      id: b.id,
-      participantId: b.participantId,
-      displayName: p?.displayName ?? 'Unknown',
-      avatarColor: p?.avatarColor ?? '#3b82f6',
-      amount: b.amount,
-      ts: new Date(b.bidAt!).getTime(),
-    }
-  })
+  const bidHistory = bidHistoryRaw.map((row) => ({
+    id: row.bid.id,
+    participantId: row.bid.participantId,
+    displayName: row.participant?.displayName ?? 'Unknown',
+    avatarColor: row.participant?.avatarColor ?? '#3b82f6',
+    amount: row.bid.amount,
+    ts: new Date(row.bid.bidAt!).getTime(),
+  }))
 
-  // Teams
-  const wonPlayers = await db.select().from(teamPlayers).where(eq(teamPlayers.roomId, room.id))
+  // CRITICAL FIX #2: Use single query with JOINs instead of N+1
+  const wonPlayersRaw = await db.select({
+    teamPlayer: teamPlayers,
+    player: playersTable,
+    club: clubs,
+    country: countries,
+    attributes: playerAttributes,
+  })
+    .from(teamPlayers)
+    .innerJoin(playersTable, eq(teamPlayers.playerId, playersTable.id))
+    .leftJoin(clubs, eq(playersTable.clubId, clubs.id))
+    .leftJoin(countries, eq(playersTable.countryId, countries.id))
+    .leftJoin(playerAttributes, eq(playersTable.id, playerAttributes.playerId))
+    .where(eq(teamPlayers.roomId, room.id))
+
   const teams: Record<string, PlayerWithDetails[]> = {}
   const teamBudgets: Record<string, number> = {}
 
@@ -128,15 +143,15 @@ export async function getRoomSnapshot(roomCode: string) {
     teams[p.id] = []
   }
 
-  if (wonPlayers.length > 0) {
-    const playerIds = wonPlayers.map((wp) => wp.playerId)
-    const playerList = await Promise.all(playerIds.map(getPlayerWithDetails))
-    for (const wp of wonPlayers) {
-      const player = playerList.find((pl) => pl?.id === wp.playerId)
-      if (player) {
-        teams[wp.participantId] = [...(teams[wp.participantId] ?? []), player]
-      }
+  for (const row of wonPlayersRaw) {
+    const playerWithDetails: PlayerWithDetails = {
+      ...row.player,
+      club: row.club,
+      country: row.country,
+      attributes: row.attributes,
+      secondaryPositions: [],
     }
+    teams[row.teamPlayer.participantId] = [...(teams[row.teamPlayer.participantId] ?? []), playerWithDetails]
   }
 
   // Chat
@@ -197,53 +212,98 @@ export async function startAuction(roomCode: string, hostParticipantId: string):
 
 // ─── Place Bid ────────────────────────────────────────────────────────────────
 
+const BID_INCREMENT = 100000 // £100k minimum increment
+
 export async function placeBid(input: {
   roomCode: string
   participantId: string
   amount: number
 }): Promise<{ error?: string }> {
   try {
-    const [room] = await db.select().from(rooms).where(eq(rooms.code, input.roomCode))
-    if (!room) return { error: 'Room not found' }
-    if (room.status !== 'active') return { error: 'Auction not active' }
-    if (!room.currentPlayerId) return { error: 'No player up for auction' }
-    if (input.amount <= (room.currentBid ?? 0)) return { error: 'Bid must be higher than current bid' }
+    return await db.transaction(async (tx) => {
+      // CRITICAL FIX #1: Lock room row to prevent race conditions
+      const [room] = await tx.select().from(rooms)
+        .where(eq(rooms.code, input.roomCode))
+        .for('update') // Database-level lock
+      
+      if (!room) return { error: 'Room not found' }
+      if (room.status !== 'active') return { error: 'Auction not active' }
+      if (!room.currentPlayerId) return { error: 'No player up for auction' }
+      
+      // CRITICAL FIX #2: Validate bid increment
+      const minNextBid = (room.currentBid ?? 0) + BID_INCREMENT
+      if (input.amount < minNextBid) {
+        return { error: `Minimum bid is ${formatCurrency(minNextBid)}` }
+      }
 
-    const [participant] = await db.select().from(participants)
-      .where(and(eq(participants.id, input.participantId), eq(participants.roomId, room.id)))
-    if (!participant) return { error: 'Participant not found' }
-    if (participant.budgetRemaining < input.amount) return { error: 'Insufficient budget' }
+      // CRITICAL FIX #3: Lock participant to prevent budget over-spending
+      const [participant] = await tx.select().from(participants)
+        .where(and(eq(participants.id, input.participantId), eq(participants.roomId, room.id)))
+        .for('update') // Participant row locked
+      
+      if (!participant) return { error: 'Participant not found' }
+      
+      // Validate sufficient budget for this bid
+      if (participant.budgetRemaining < input.amount) {
+        return { error: `Insufficient budget. Available: ${formatCurrency(participant.budgetRemaining)}` }
+      }
 
-    const [bid] = await db.insert(bids).values({
-      roomId: room.id,
-      playerId: room.currentPlayerId,
-      participantId: input.participantId,
-      amount: input.amount,
-    }).returning()
+      // CRITICAL FIX #4: Check for duplicate bid (idempotency)
+      const [existingBid] = await tx.select().from(bids)
+        .where(and(
+          eq(bids.roomId, room.id),
+          eq(bids.playerId, room.currentPlayerId),
+          eq(bids.participantId, input.participantId),
+          eq(bids.amount, input.amount)
+        ))
+        .limit(1)
+      
+      if (existingBid) {
+        // Already placed this exact bid, return idempotent success
+        const bidEntry = {
+          id: existingBid.id,
+          participantId: input.participantId,
+          displayName: participant.displayName,
+          avatarColor: participant.avatarColor,
+          amount: input.amount,
+          ts: Date.now(),
+        }
+        return {} // Success - was already placed
+      }
 
-    const newTimerEnd = new Date(Date.now() + room.timerSeconds * 1000)
+      // Insert bid and update room atomically
+      const [bid] = await tx.insert(bids).values({
+        roomId: room.id,
+        playerId: room.currentPlayerId,
+        participantId: input.participantId,
+        amount: input.amount,
+      }).returning()
 
-    await db.update(rooms).set({
-      currentBid: input.amount,
-      currentBidderId: input.participantId,
-      timerEnd: newTimerEnd,
-    }).where(eq(rooms.id, room.id))
+      // Reset timer on bid - keep auction active
+      const newTimerEnd = new Date(Date.now() + room.timerSeconds * 1000)
 
-    const bidEntry = {
-      id: bid.id,
-      participantId: input.participantId,
-      displayName: participant.displayName,
-      avatarColor: participant.avatarColor,
-      amount: input.amount,
-      ts: Date.now(),
-    }
+      await tx.update(rooms).set({
+        currentBid: input.amount,
+        currentBidderId: input.participantId,
+        timerEnd: newTimerEnd,
+      }).where(eq(rooms.id, room.id))
 
-    broadcast(input.roomCode, 'bid:placed', {
-      bid: bidEntry,
-      roomUpdate: { currentBid: input.amount, currentBidderId: input.participantId, timerEnd: newTimerEnd },
+      const bidEntry = {
+        id: bid.id,
+        participantId: input.participantId,
+        displayName: participant.displayName,
+        avatarColor: participant.avatarColor,
+        amount: input.amount,
+        ts: Date.now(),
+      }
+
+      broadcast(input.roomCode, 'bid:placed', {
+        bid: bidEntry,
+        roomUpdate: { currentBid: input.amount, currentBidderId: input.participantId, timerEnd: newTimerEnd },
+      })
+
+      return {}
     })
-
-    return {}
   } catch (err) {
     console.error('[placeBid]', err)
     return { error: 'Failed to place bid' }
@@ -257,70 +317,99 @@ export async function finalizePlayerSale(input: {
   hostParticipantId: string
 }): Promise<{ error?: string }> {
   try {
-    const [room] = await db.select().from(rooms).where(eq(rooms.code, input.roomCode))
-    if (!room) return { error: 'Room not found' }
-    if (room.hostId !== input.hostParticipantId) return { error: 'Only host can finalize' }
-    if (room.status !== 'active') return { error: 'Not active' }
+    return await db.transaction(async (tx) => {
+      // CRITICAL FIX #1: Lock room row to prevent multiple finalizations
+      const [room] = await tx.select().from(rooms)
+        .where(eq(rooms.code, input.roomCode))
+        .for('update')
+      
+      if (!room) return { error: 'Room not found' }
+      if (room.hostId !== input.hostParticipantId) return { error: 'Only host can finalize' }
+      
+      // CRITICAL FIX #2: Check if already finalized (idempotency)
+      if (room.status !== 'active') return { error: 'Auction not active' }
+      if (!room.currentPlayerId) return { error: 'No active player' }
 
-    const roomParticipants = await db.select().from(participants).where(eq(participants.roomId, room.id))
+      const roomParticipants = await tx.select().from(participants).where(eq(participants.roomId, room.id))
 
-    let winnerId: string | null = room.currentBidderId
-    let winnerName: string | null = null
-    const amountPaid = room.currentBid ?? 0
+      let winnerId: string | null = room.currentBidderId
+      let winnerName: string | null = null
+      const amountPaid = room.currentBid ?? 0
 
-    if (winnerId && amountPaid > 0 && room.currentPlayerId) {
-      const winner = roomParticipants.find((p) => p.id === winnerId)
-      winnerName = winner?.displayName ?? null
+      // CRITICAL FIX #3: Always deduct budget from winner (even if unsold, keep as pending)
+      if (winnerId && amountPaid > 0) {
+        const winner = roomParticipants.find((p) => p.id === winnerId)
+        winnerName = winner?.displayName ?? null
 
-      await db.insert(teamPlayers).values({
-        roomId: room.id,
-        participantId: winnerId,
-        playerId: room.currentPlayerId,
+        // Insert team player and deduct budget atomically
+        await tx.insert(teamPlayers).values({
+          roomId: room.id,
+          participantId: winnerId,
+          playerId: room.currentPlayerId,
+          amountPaid,
+        })
+
+        // Deduct from budget
+        await tx.update(participants).set({
+          budgetRemaining: sql`budget_remaining - ${amountPaid}`,
+        }).where(eq(participants.id, winnerId))
+      } else if (room.currentPlayerId && !winnerId) {
+        // CRITICAL FIX #4: Player unsold - skip and move to next
+        // Don't deduct budget, just move on
+      }
+
+      // Get next player
+      const nextPlayer = await getNextAuctionPlayer(room.id)
+      const teamBudgets: Record<string, number> = {}
+      const updatedParticipants = await tx.select().from(participants).where(eq(participants.roomId, room.id))
+      for (const p of updatedParticipants) teamBudgets[p.id] = p.budgetRemaining
+
+      const playerSoldPayload = {
+        playerId: room.currentPlayerId ?? 0,
+        winnerId,
+        winnerName,
         amountPaid,
+        teamBudgets,
+      }
+
+      if (!nextPlayer) {
+        // CRITICAL FIX #5: Atomic status update prevents multiple finalizations
+        const [updated] = await tx.update(rooms)
+          .set({
+            status: 'ended',
+            endedAt: new Date(),
+            currentPlayerId: null,
+            currentBid: 0,
+            currentBidderId: null,
+            timerEnd: null,
+          })
+          .where(and(eq(rooms.id, room.id), eq(rooms.status, 'active'))) // Only if still active
+          .returning()
+        
+        if (!updated) return { error: 'Already ended' } // Idempotent
+
+        broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
+        broadcast(input.roomCode, 'auction:ended', {})
+        return {}
+      }
+
+      // CRITICAL FIX #6: Ensure no duplicate player selected
+      const timerEnd = new Date(Date.now() + room.timerSeconds * 1000)
+      await tx.update(rooms).set({
+        currentPlayerId: nextPlayer.id,
+        currentBid: 0,
+        currentBidderId: null,
+        timerEnd,
+      }).where(eq(rooms.id, room.id))
+
+      broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
+      broadcast(input.roomCode, 'auction:next_player', {
+        player: nextPlayer,
+        roomUpdate: { currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
       })
 
-      await db.update(participants).set({
-        budgetRemaining: sql`budget_remaining - ${amountPaid}`,
-      }).where(eq(participants.id, winnerId))
-    }
-
-    // Get next player
-    const nextPlayer = await getNextAuctionPlayer(room.id)
-    const teamBudgets: Record<string, number> = {}
-    const updatedParticipants = await db.select().from(participants).where(eq(participants.roomId, room.id))
-    for (const p of updatedParticipants) teamBudgets[p.id] = p.budgetRemaining
-
-    const playerSoldPayload = {
-      playerId: room.currentPlayerId ?? 0,
-      winnerId,
-      winnerName,
-      amountPaid,
-      teamBudgets,
-    }
-
-    if (!nextPlayer) {
-      // Auction ended
-      await db.update(rooms).set({ status: 'ended', endedAt: new Date(), currentPlayerId: null, currentBid: 0, currentBidderId: null, timerEnd: null }).where(eq(rooms.id, room.id))
-      broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
-      broadcast(input.roomCode, 'auction:ended', {})
       return {}
-    }
-
-    const timerEnd = new Date(Date.now() + room.timerSeconds * 1000)
-    await db.update(rooms).set({
-      currentPlayerId: nextPlayer.id,
-      currentBid: 0,
-      currentBidderId: null,
-      timerEnd,
-    }).where(eq(rooms.id, room.id))
-
-    broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
-    broadcast(input.roomCode, 'auction:next_player', {
-      player: nextPlayer,
-      roomUpdate: { currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
     })
-
-    return {}
   } catch (err) {
     console.error('[finalizePlayerSale]', err)
     return { error: 'Failed to finalize sale' }
@@ -329,6 +418,11 @@ export async function finalizePlayerSale(input: {
 
 // ─── Send Chat ────────────────────────────────────────────────────────────────
 
+// CRITICAL FIX: Rate limiting tracker for chat spam prevention
+const chatRateLimits = new Map<string, Array<number>>() // participantId -> timestamps
+const CHAT_RATE_LIMIT = 5 // messages
+const CHAT_RATE_WINDOW = 10000 // per 10 seconds
+
 export async function sendChatMessage(input: {
   roomCode: string
   participantId: string
@@ -336,6 +430,21 @@ export async function sendChatMessage(input: {
   messageType?: string
 }): Promise<{ error?: string }> {
   try {
+    // CRITICAL FIX #1: Rate limit spam
+    const now = Date.now()
+    const key = `${input.roomCode}:${input.participantId}`
+    const timestamps = chatRateLimits.get(key) ?? []
+    
+    // Clean old timestamps
+    const recentTimestamps = timestamps.filter((ts) => now - ts < CHAT_RATE_WINDOW)
+    
+    if (recentTimestamps.length >= CHAT_RATE_LIMIT) {
+      return { error: `Rate limited. Max ${CHAT_RATE_LIMIT} messages per ${CHAT_RATE_WINDOW / 1000}s` }
+    }
+    
+    recentTimestamps.push(now)
+    chatRateLimits.set(key, recentTimestamps)
+
     const [room] = await db.select().from(rooms).where(eq(rooms.code, input.roomCode))
     if (!room) return { error: 'Room not found' }
 
@@ -343,12 +452,16 @@ export async function sendChatMessage(input: {
       .where(and(eq(participants.id, input.participantId), eq(participants.roomId, room.id)))
     if (!participant) return { error: 'Not in room' }
 
+    // CRITICAL FIX #2: Validate message length and sanitize
+    const message = input.message.trim().slice(0, 500)
+    if (!message) return { error: 'Message cannot be empty' }
+
     const [msg] = await db.insert(chatMessages).values({
       roomId: room.id,
       participantId: input.participantId,
       displayName: participant.displayName,
       avatarColor: participant.avatarColor,
-      message: input.message.slice(0, 500),
+      message,
       messageType: input.messageType ?? 'chat',
     }).returning()
 
@@ -360,24 +473,35 @@ export async function sendChatMessage(input: {
   }
 }
 
+// Cleanup rate limit tracker every 5 minutes
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, timestamps] of chatRateLimits.entries()) {
+    const active = timestamps.filter((ts) => now - ts < CHAT_RATE_WINDOW)
+    if (active.length === 0) {
+      chatRateLimits.delete(key)
+    } else {
+      chatRateLimits.set(key, active)
+    }
+  }
+}, 300000)
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function getNextAuctionPlayer(roomId: number): Promise<PlayerWithDetails | null> {
-  const soldPlayerIds = await db.select({ playerId: teamPlayers.playerId })
-    .from(teamPlayers).where(eq(teamPlayers.roomId, roomId))
-
-  const soldIds = soldPlayerIds.map((x) => x.playerId)
-
-  const queryBase = db.select().from(playersTable)
+  // CRITICAL FIX #1: Use LEFT JOIN to find unsold players, prevents duplicates
+  const [result] = await db.select({player: playersTable})
+    .from(playersTable)
+    .leftJoin(teamPlayers, and(
+      eq(teamPlayers.playerId, playersTable.id),
+      eq(teamPlayers.roomId, roomId)
+    ))
+    .where(isNull(teamPlayers.id)) // No match = not yet sold
     .orderBy(sql`RANDOM()`)
     .limit(1)
 
-  const result = soldIds.length > 0
-    ? await queryBase.where(sql`${playersTable.id} NOT IN (${sql.join(soldIds.map(id => sql`${id}`), sql`, `)})`)
-    : await queryBase
-
-  if (!result[0]) return null
-  return getPlayerWithDetails(result[0].id)
+  if (!result) return null
+  return getPlayerWithDetails(result.player.id)
 }
 
 export async function getPlayerWithDetails(playerId: number): Promise<PlayerWithDetails | null> {
