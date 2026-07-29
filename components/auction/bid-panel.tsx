@@ -68,6 +68,7 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
 
   const isTimerCritical = timeLeft <= 10 && timeLeft > 0
   const minNextBid = currentBid > 0 ? currentBid + 500_000 : 1_000_000
+  const timerPercent = timerEnd ? Math.max(0, ((timerEnd - Date.now()) / ((useAuctionStore.getState().room?.timerSeconds ?? 60) * 1000)) * 100) : 0
 
   if (!currentPlayer) return null
 
@@ -102,11 +103,11 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
       </div>
 
       {/* Timer progress bar */}
-      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border" role="progressbar" aria-valuenow={timerPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Auction timer progress">
+      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border" role="progressbar" aria-valuenow={Math.round(timerPercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Auction timer progress">
         <div
           className="h-full rounded-full transition-all duration-200"
           style={{
-            width: `${timerEnd ? Math.max(0, ((timerEnd - Date.now()) / ((useAuctionStore.getState().room?.timerSeconds ?? 60) * 1000)) * 100) : 0}%`,
+            width: `${timerPercent}%`,
             backgroundColor: isTimerCritical ? '#ef4444' : '#f59e0b',
           }}
         />
