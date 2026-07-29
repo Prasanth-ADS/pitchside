@@ -88,7 +88,7 @@ export const rooms = pgTable('rooms', {
   budgetPerTeam: bigint('budget_per_team', { mode: 'number' }).notNull().default(100000000),
   maxPlayersPerTeam: integer('max_players_per_team').notNull().default(15),
   minPlayersPerTeam: integer('min_players_per_team').notNull().default(11),
-  timerSeconds: integer('timer_seconds').notNull().default(60),
+  timerSeconds: integer('timer_seconds').notNull().default(10),
   formation: text('formation').default('4-3-3'),
   currentPlayerId: integer('current_player_id'),
   currentBid: bigint('current_bid', { mode: 'number' }).default(0),

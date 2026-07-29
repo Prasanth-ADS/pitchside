@@ -33,6 +33,7 @@ export interface AuctionState {
   // Team data: participantId -> player list
   teams: Record<string, PlayerWithDetails[]>
   teamBudgets: Record<string, number> // participantId -> remaining budget
+  marketPlayers: PlayerWithDetails[]
 
   // Chat
   chatMessages: ChatMessage[]
@@ -44,7 +45,7 @@ export interface AuctionState {
   setIdentity: (id: string, name: string, color: string) => void
   applySnapshot: (snapshot: RoomSnapshot) => void
   applyBidPlaced: (bid: BidEntry, roomUpdate: Partial<Room>) => void
-  applyNextPlayer: (player: PlayerWithDetails, roomUpdate: Partial<Room>) => void
+  applyNextPlayer: (player: PlayerWithDetails, roomUpdate: Partial<Room>, marketPlayers?: PlayerWithDetails[]) => void
   applyPlayerSold: (payload: PlayerSoldPayload) => void
   applyTimerUpdate: (timerEnd: number) => void
   applyAuctionEnded: () => void
@@ -63,6 +64,7 @@ export interface RoomSnapshot {
   bidHistory: BidEntry[]
   teams: Record<string, PlayerWithDetails[]>
   teamBudgets: Record<string, number>
+  marketPlayers?: PlayerWithDetails[]
   chatMessages: ChatMessage[]
 }
 
@@ -87,6 +89,7 @@ const initialState = {
   bidHistory: [],
   teams: {},
   teamBudgets: {},
+  marketPlayers: [],
   chatMessages: [],
   sseStatus: 'disconnected' as const,
 }
@@ -109,12 +112,13 @@ export const useAuctionStore = create<AuctionState>()(
         bidHistory: snapshot.bidHistory,
         teams: snapshot.teams,
         teamBudgets: snapshot.teamBudgets,
+        marketPlayers: snapshot.marketPlayers ?? [],
         chatMessages: snapshot.chatMessages,
       }),
 
     applyBidPlaced: (bid, roomUpdate) =>
       set((s) => ({
-        bidHistory: [bid, ...s.bidHistory].slice(0, 50),
+        bidHistory: [bid, ...s.bidHistory.filter((entry) => entry.id !== bid.id)].slice(0, 50),
         currentBid: bid.amount,
         currentBidderId: bid.participantId,
         timerEnd: roomUpdate.timerEnd
@@ -123,7 +127,7 @@ export const useAuctionStore = create<AuctionState>()(
         room: s.room ? { ...s.room, ...roomUpdate } : s.room,
       })),
 
-    applyNextPlayer: (player, roomUpdate) =>
+    applyNextPlayer: (player, roomUpdate, marketPlayers) =>
       set((s) => ({
         currentPlayer: player,
         currentBid: 0,
@@ -132,6 +136,7 @@ export const useAuctionStore = create<AuctionState>()(
           ? new Date(roomUpdate.timerEnd as unknown as string).getTime()
           : null,
         bidHistory: [],
+        marketPlayers: marketPlayers ?? s.marketPlayers.filter((p) => p.id !== player.id),
         room: s.room ? { ...s.room, ...roomUpdate } : s.room,
       })),
 
@@ -164,7 +169,7 @@ export const useAuctionStore = create<AuctionState>()(
 
     applyChat: (msg) =>
       set((s) => ({
-        chatMessages: [...s.chatMessages, msg].slice(-200),
+        chatMessages: [...s.chatMessages.filter((entry) => entry.id !== msg.id), msg].slice(-200),
       })),
 
     applyParticipantJoined: (participant) =>

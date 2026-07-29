@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuctionStore } from '@/lib/auction-store'
 import { useAuctionSSE } from '@/hooks/use-auction-sse'
@@ -11,6 +11,8 @@ import { TeamSidebar } from './team-sidebar'
 import { ChatPanel } from './chat-panel'
 import { BidHistoryList } from './bid-history-list'
 import { HostControls } from './host-controls'
+import { TransferMarketPanel } from './transfer-market-panel'
+import { finalizePlayerSale } from '@/app/actions/rooms'
 import type { RoomSnapshot } from '@/lib/auction-store'
 
 interface Props {
@@ -20,9 +22,10 @@ interface Props {
 
 export function AuctionClient({ initialSnapshot, roomCode }: Props) {
   const router = useRouter()
-  const { applySnapshot, setIdentity, room } = useAuctionStore()
+  const { applySnapshot, setIdentity, room, timerEnd, currentPlayer } = useAuctionStore()
   const [myId, setMyId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'teams' | 'chat'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'market' | 'teams'>('chat')
+  const finalizedPlayerRef = useRef<number | null>(null)
 
   useEffect(() => {
     applySnapshot(initialSnapshot)
@@ -44,6 +47,19 @@ export function AuctionClient({ initialSnapshot, roomCode }: Props) {
   }, [room?.status]) // eslint-disable-line
 
   const isHost = room?.hostId === myId
+
+  useEffect(() => {
+    if (!isHost || !myId || !timerEnd || !currentPlayer || room?.status !== 'active') return
+
+    finalizedPlayerRef.current = null
+    const timeout = setTimeout(async () => {
+      if (finalizedPlayerRef.current === currentPlayer.id) return
+      finalizedPlayerRef.current = currentPlayer.id
+      await finalizePlayerSale({ roomCode, hostParticipantId: myId })
+    }, Math.max(0, timerEnd - Date.now()) + 250)
+
+    return () => clearTimeout(timeout)
+  }, [currentPlayer?.id, isHost, myId, room?.status, roomCode, timerEnd])
 
   return (
     <div className="min-h-screen bg-background flex flex-col overflow-hidden">
@@ -70,7 +86,7 @@ export function AuctionClient({ initialSnapshot, roomCode }: Props) {
         <aside className="w-72 flex-shrink-0 border-l border-border flex flex-col">
           {/* Tab toggle */}
           <div className="flex border-b border-border">
-            {(['chat', 'teams'] as const).map(tab => (
+            {(['chat', 'market', 'teams'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -80,15 +96,14 @@ export function AuctionClient({ initialSnapshot, roomCode }: Props) {
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {tab === 'chat' ? 'Live Chat' : 'Teams'}
+                {tab === 'chat' ? 'Live Chat' : tab === 'market' ? 'Market' : 'Teams'}
               </button>
             ))}
           </div>
           <div className="flex-1 overflow-hidden">
-            {activeTab === 'chat'
-              ? <ChatPanel roomCode={roomCode} myId={myId} />
-              : <TeamSidebar myId={myId} compact />
-            }
+            {activeTab === 'chat' && <ChatPanel roomCode={roomCode} myId={myId} />}
+            {activeTab === 'market' && <TransferMarketPanel />}
+            {activeTab === 'teams' && <TeamSidebar myId={myId} compact />}
           </div>
         </aside>
       </div>

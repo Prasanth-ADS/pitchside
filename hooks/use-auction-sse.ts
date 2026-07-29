@@ -75,8 +75,8 @@ function handleEvent(type: SSEEventType, payload: unknown, store: ReturnType<typ
       break
     }
     case 'auction:next_player': {
-      const p = payload as { player: PlayerWithDetails; roomUpdate: Partial<Room> }
-      store.applyNextPlayer(p.player, p.roomUpdate)
+      const p = payload as { player: PlayerWithDetails; roomUpdate: Partial<Room>; marketPlayers?: PlayerWithDetails[] }
+      store.applyNextPlayer(p.player, p.roomUpdate, p.marketPlayers)
       break
     }
     case 'auction:player_sold': {
