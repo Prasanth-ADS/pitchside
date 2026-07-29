@@ -307,11 +307,6 @@ export async function placeBid(input: {
 
       return {}
     })
-<<<<<<< HEAD
-=======
-
-    return { bid: bidEntry, roomUpdate: { currentBid: input.amount, currentBidderId: input.participantId, timerEnd: newTimerEnd } }
->>>>>>> 006922f5caa645e3b505b8a1f5ddd96ebc11f2d8
   } catch (err) {
     console.error('[placeBid]', err)
     return { error: 'Failed to place bid' }
@@ -417,24 +412,6 @@ export async function finalizePlayerSale(input: {
       })
 
       return {}
-<<<<<<< HEAD
-=======
-    }
-
-    const timerEnd = new Date(Date.now() + room.timerSeconds * 1000)
-    await db.update(rooms).set({
-      currentPlayerId: nextPlayer.id,
-      currentBid: 0,
-      currentBidderId: null,
-      timerEnd,
-    }).where(eq(rooms.id, room.id))
-
-    broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
-    broadcast(input.roomCode, 'auction:next_player', {
-      player: nextPlayer,
-      roomUpdate: { currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
-      marketPlayers: await getTransferMarketPlayers(room.id, nextPlayer.id),
->>>>>>> 006922f5caa645e3b505b8a1f5ddd96ebc11f2d8
     })
   } catch (err) {
     console.error('[finalizePlayerSale]', err)
