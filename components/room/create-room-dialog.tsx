@@ -17,7 +17,7 @@ interface Props {
 }
 
 const BUDGET_PRESETS = [50_000_000, 100_000_000, 150_000_000, 200_000_000]
-const TIMER_PRESETS = [30, 60, 90, 120]
+const TIMER_PRESETS = [5, 10, 15, 30]
 
 export function CreateRoomDialog({ open, onOpenChange }: Props) {
   const router = useRouter()
@@ -29,7 +29,7 @@ export function CreateRoomDialog({ open, onOpenChange }: Props) {
   const [budget, setBudget] = useState(100_000_000)
   const [maxPlayers, setMaxPlayers] = useState(15)
   const [minPlayers, setMinPlayers] = useState(11)
-  const [timer, setTimer] = useState(60)
+  const [timer, setTimer] = useState(10)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

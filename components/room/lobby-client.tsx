@@ -66,7 +66,10 @@ export function LobbyClient({ initialSnapshot, roomCode }: Props) {
     if (result.error) {
       setStartError(result.error)
       setStartLoading(false)
+      return
     }
+    applyRoomStarted({ status: 'active' })
+    router.push(`/room/${roomCode}/auction`)
   }
 
   const isHost = room?.hostId === myId
