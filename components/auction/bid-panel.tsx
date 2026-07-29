@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function BidPanel({ roomCode, myId, isHost }: Props) {
-  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, myParticipantId } = useAuctionStore()
+  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, myParticipantId, applyBidPlaced } = useAuctionStore()
   const [customAmount, setCustomAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -55,9 +55,10 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
     setError('')
     const result = await placeBid({ roomCode, participantId: myId, amount })
     if (result.error) setError(result.error)
+    if (result.bid && result.roomUpdate) applyBidPlaced(result.bid, result.roomUpdate)
     setLoading(false)
     setCustomAmount('')
-  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode])
+  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode, applyBidPlaced])
 
   const handleCustomBid = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -66,8 +67,6 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
   }, [customAmount, handleBid])
 
   const isTimerCritical = timeLeft <= 10 && timeLeft > 0
-  const timerPercent = timerEnd ? Math.max(0, (timerEnd - Date.now()) / (useAuctionStore.getState().room?.timerSeconds ?? 60) / 10) : 0
-
   const minNextBid = currentBid > 0 ? currentBid + 500_000 : 1_000_000
 
   if (!currentPlayer) return null

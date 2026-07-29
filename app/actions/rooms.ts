@@ -8,7 +8,7 @@ import {
 import { eq, and, inArray, sql, isNull } from 'drizzle-orm'
 import { generateRoomCode, generateParticipantId, pickAvatarColor, formatCurrency } from '@/lib/utils/format'
 import { broadcast } from '@/lib/sse-broadcaster'
-import type { PlayerWithDetails } from '@/lib/db/schema'
+import type { ChatMessage, PlayerWithDetails } from '@/lib/db/schema'
 
 // ─── Create Room ──────────────────────────────────────────────────────────────
 
@@ -168,6 +168,7 @@ export async function getRoomSnapshot(roomCode: string) {
     bidHistory,
     teams,
     teamBudgets,
+    marketPlayers: await getTransferMarketPlayers(room.id, room.currentPlayerId ?? undefined),
     chatMessages: msgs,
   }
 }
@@ -202,6 +203,7 @@ export async function startAuction(roomCode: string, hostParticipantId: string):
     broadcast(roomCode, 'auction:next_player', {
       player: nextPlayer,
       roomUpdate: { status: 'active', currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
+      marketPlayers: await getTransferMarketPlayers(room.id, nextPlayer.id),
     })
 
     return {}
@@ -219,7 +221,7 @@ export async function placeBid(input: {
   roomCode: string
   participantId: string
   amount: number
-}): Promise<{ error?: string }> {
+}): Promise<{ bid?: { id: number; participantId: string; displayName: string; avatarColor: string; amount: number; ts: number }; roomUpdate?: { currentBid: number; currentBidderId: string; timerEnd: Date }; error?: string }> {
   try {
     return await db.transaction(async (tx) => {
       // CRITICAL FIX #1: Lock room row to prevent race conditions
@@ -305,6 +307,11 @@ export async function placeBid(input: {
 
       return {}
     })
+<<<<<<< HEAD
+=======
+
+    return { bid: bidEntry, roomUpdate: { currentBid: input.amount, currentBidderId: input.participantId, timerEnd: newTimerEnd } }
+>>>>>>> 006922f5caa645e3b505b8a1f5ddd96ebc11f2d8
   } catch (err) {
     console.error('[placeBid]', err)
     return { error: 'Failed to place bid' }
@@ -410,6 +417,24 @@ export async function finalizePlayerSale(input: {
       })
 
       return {}
+<<<<<<< HEAD
+=======
+    }
+
+    const timerEnd = new Date(Date.now() + room.timerSeconds * 1000)
+    await db.update(rooms).set({
+      currentPlayerId: nextPlayer.id,
+      currentBid: 0,
+      currentBidderId: null,
+      timerEnd,
+    }).where(eq(rooms.id, room.id))
+
+    broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
+    broadcast(input.roomCode, 'auction:next_player', {
+      player: nextPlayer,
+      roomUpdate: { currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
+      marketPlayers: await getTransferMarketPlayers(room.id, nextPlayer.id),
+>>>>>>> 006922f5caa645e3b505b8a1f5ddd96ebc11f2d8
     })
   } catch (err) {
     console.error('[finalizePlayerSale]', err)
@@ -429,7 +454,7 @@ export async function sendChatMessage(input: {
   participantId: string
   message: string
   messageType?: string
-}): Promise<{ error?: string }> {
+}): Promise<{ message?: ChatMessage; error?: string }> {
   try {
     // CRITICAL FIX #1: Rate limit spam
     const now = Date.now()
@@ -467,7 +492,7 @@ export async function sendChatMessage(input: {
     }).returning()
 
     broadcast(input.roomCode, 'chat:message', msg)
-    return {}
+    return { message: msg }
   } catch (err) {
     console.error('[sendChatMessage]', err)
     return { error: 'Failed to send message' }
@@ -503,6 +528,28 @@ async function getNextAuctionPlayer(roomId: number): Promise<PlayerWithDetails |
 
   if (!result) return null
   return getPlayerWithDetails(result.player.id)
+}
+
+async function getTransferMarketPlayers(roomId: number, currentPlayerId?: number): Promise<PlayerWithDetails[]> {
+  const soldPlayerIds = await db.select({ playerId: teamPlayers.playerId })
+    .from(teamPlayers).where(eq(teamPlayers.roomId, roomId))
+
+  const excludedIds = [
+    ...soldPlayerIds.map((x) => x.playerId),
+    ...(currentPlayerId ? [currentPlayerId] : []),
+  ]
+
+  const result = excludedIds.length > 0
+    ? await db.select().from(playersTable)
+        .where(sql`${playersTable.id} NOT IN (${sql.join(excludedIds.map(id => sql`${id}`), sql`, `)})`)
+        .orderBy(sql`${playersTable.overallRating} DESC`)
+        .limit(12)
+    : await db.select().from(playersTable)
+        .orderBy(sql`${playersTable.overallRating} DESC`)
+        .limit(12)
+
+  return (await Promise.all(result.map((player) => getPlayerWithDetails(player.id))))
+    .filter((player): player is PlayerWithDetails => Boolean(player))
 }
 
 export async function getPlayerWithDetails(playerId: number): Promise<PlayerWithDetails | null> {

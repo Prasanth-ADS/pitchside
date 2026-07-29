@@ -12,9 +12,10 @@ interface Props {
 }
 
 export function ChatPanel({ roomCode, myId }: Props) {
-  const { chatMessages, myParticipantId } = useAuctionStore()
+  const { chatMessages, myParticipantId, applyChat } = useAuctionStore()
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -24,9 +25,16 @@ export function ChatPanel({ roomCode, myId }: Props) {
   async function handleSend(e: React.FormEvent) {
     e.preventDefault()
     if (!message.trim() || !myId || sending) return
+    const outgoing = message.trim()
     setSending(true)
-    await sendChatMessage({ roomCode, participantId: myId, message: message.trim() })
-    setMessage('')
+    setError('')
+    const result = await sendChatMessage({ roomCode, participantId: myId, message: outgoing })
+    if (result.error) {
+      setError(result.error)
+    } else {
+      if (result.message) applyChat(result.message)
+      setMessage('')
+    }
     setSending(false)
   }
 
@@ -98,6 +106,7 @@ export function ChatPanel({ roomCode, myId }: Props) {
             disabled={!myId}
           />
         </form>
+        {error && <p className="mt-2 text-[10px] text-destructive">{error}</p>}
       </div>
     </div>
   )
