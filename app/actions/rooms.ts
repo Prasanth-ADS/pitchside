@@ -319,6 +319,7 @@ export async function finalizePlayerSale(input: {
   roomCode: string
   hostParticipantId: string
 }): Promise<{ error?: string }> {
+  console.log('[v0] finalizePlayerSale ENTRY')
   try {
     return await db.transaction(async (tx) => {
       // CRITICAL FIX #1: Lock room row to prevent multiple finalizations
@@ -362,7 +363,9 @@ export async function finalizePlayerSale(input: {
       }
 
       // Get next player
+      console.log('[v0] Getting next auction player...')
       const nextPlayer = await getNextAuctionPlayer(room.id)
+      console.log('[v0] Next player:', nextPlayer?.name ?? 'NONE - auction should end')
       const teamBudgets: Record<string, number> = {}
       const updatedParticipants = await tx.select().from(participants).where(eq(participants.roomId, room.id))
       for (const p of updatedParticipants) teamBudgets[p.id] = p.budgetRemaining
@@ -405,11 +408,13 @@ export async function finalizePlayerSale(input: {
         timerEnd,
       }).where(eq(rooms.id, room.id))
 
+      console.log('[v0] Broadcasting player_sold and next_player', { player: nextPlayer.name, playerSoldPayload })
       broadcast(input.roomCode, 'auction:player_sold', playerSoldPayload)
       broadcast(input.roomCode, 'auction:next_player', {
         player: nextPlayer,
         roomUpdate: { currentPlayerId: nextPlayer.id, currentBid: 0, currentBidderId: null, timerEnd },
       })
+      console.log('[v0] Broadcasts sent')
 
       return {}
     })

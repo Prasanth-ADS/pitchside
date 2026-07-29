@@ -26,9 +26,11 @@ export function HostControls({ roomCode, myId }: Props) {
 
   const handleFinalizeSale = async () => {
     if (!myId || loading) return
+    console.log('[v0] handleFinalizeSale clicked')
     setLoading(true)
     setError('')
     const result = await finalizePlayerSale({ roomCode, hostParticipantId: myId })
+    console.log('[v0] finalizePlayerSale result:', result)
     if (result.error) setError(result.error)
     setLoading(false)
   }
