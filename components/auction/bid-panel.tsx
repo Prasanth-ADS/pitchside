@@ -72,36 +72,37 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
   if (!currentPlayer) return null
 
   return (
-    <div className="w-full max-w-md space-y-3">
+    <div className="w-full max-w-md space-y-3" role="region" aria-label="Bidding panel">
       {/* Timer + current bid */}
       <div className="rounded-2xl border border-border bg-card p-4 flex items-center justify-between gap-4">
         <div className="flex-1">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Current Bid</div>
-          <div className={`text-2xl font-black ${currentBid > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1" id="bid-label">Current Bid</div>
+          <div className={`text-2xl font-black ${currentBid > 0 ? 'text-primary' : 'text-muted-foreground'}`} aria-live="polite" aria-describedby="bid-label">
             {currentBid > 0 ? formatCurrency(currentBid) : 'No bids yet'}
           </div>
           {currentBidder && (
-            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5" aria-live="polite">
               <span
                 className="w-4 h-4 rounded-full inline-flex items-center justify-center text-[9px] font-bold text-white"
                 style={{ backgroundColor: currentBidder.avatarColor }}
+                aria-label={`Avatar for ${currentBidder.displayName}`}
               >
                 {currentBidder.displayName.charAt(0)}
               </span>
-              <span className={isMyBid ? 'text-primary font-semibold' : ''}>{isMyBid ? 'You' : currentBidder.displayName}</span>
+              <span className={isMyBid ? 'text-primary font-semibold' : ''} role="status">{isMyBid ? 'You' : currentBidder.displayName}</span>
             </div>
           )}
         </div>
         <div className="text-right">
-          <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1">Timer</div>
-          <div className={`text-3xl font-black tabular-nums ${isTimerCritical ? 'text-red-400 timer-critical' : 'text-foreground'}`}>
+          <div className="text-[10px] text-muted-foreground uppercase tracking-widest mb-1" id="timer-label">Timer</div>
+          <div className={`text-3xl font-black tabular-nums ${isTimerCritical ? 'text-red-400 timer-critical' : 'text-foreground'}`} aria-live="polite" aria-describedby="timer-label" role="status">
             {timeLeft}s
           </div>
         </div>
       </div>
 
       {/* Timer progress bar */}
-      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border">
+      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border" role="progressbar" aria-valuenow={timerPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Auction timer progress">
         <div
           className="h-full rounded-full transition-all duration-200"
           style={{
@@ -112,7 +113,8 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
       </div>
 
       {/* Quick bid buttons */}
-      <div className="grid grid-cols-4 gap-2">
+      <fieldset className="grid grid-cols-4 gap-2">
+        <legend className="sr-only">Quick bid amounts</legend>
         {QUICK_BID_INCREMENTS.map(inc => {
           const bid = Math.max(minNextBid, currentBid + inc)
           const canAfford = bid <= myBudget
@@ -121,6 +123,7 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
               key={inc}
               onClick={() => handleBid(bid)}
               disabled={loading || !canAfford || isMyBid}
+              aria-label={`Place bid of ${formatCurrency(bid)}`}
               className={`py-2.5 rounded-xl text-xs font-bold border transition-all ${
                 canAfford && !isMyBid
                   ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/50 active:scale-95'
@@ -131,33 +134,39 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
             </button>
           )
         })}
-      </div>
+      </fieldset>
 
       {/* Custom bid */}
       <form onSubmit={handleCustomBid} className="flex gap-2">
         <div className="relative flex-1">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-bold">£</span>
+          <label htmlFor="custom-bid-input" className="sr-only">Enter custom bid amount in millions</label>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-bold" aria-hidden="true">£</span>
           <Input
+            id="custom-bid-input"
             value={customAmount}
             onChange={e => setCustomAmount(e.target.value)}
             placeholder="e.g. 45 (million)"
             className="pl-7 bg-card border-border"
+            type="number"
+            step="0.5"
+            min="0"
           />
         </div>
         <Button
           type="submit"
           disabled={loading || !customAmount || isMyBid}
           className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold px-5"
+          aria-label={`Place custom bid of ${customAmount} million pounds`}
         >
           Bid
         </Button>
       </form>
 
       {isMyBid && (
-        <p className="text-center text-xs text-primary font-semibold">You are the highest bidder!</p>
+        <p className="text-center text-xs text-primary font-semibold" role="status">You are the highest bidder!</p>
       )}
 
-      {error && <p className="text-center text-xs text-destructive">{error}</p>}
+      {error && <p className="text-center text-xs text-destructive" role="alert">{error}</p>}
 
       <div className="text-center text-[10px] text-muted-foreground">
         Your budget: <span className="font-bold text-foreground">{formatCurrency(myBudget)}</span>
