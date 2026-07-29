@@ -16,16 +16,16 @@ interface Props {
 }
 
 export function BidPanel({ roomCode, myId, isHost }: Props) {
-  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, myParticipantId, applyBidPlaced } = useAuctionStore()
+  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, bidHistory } = useAuctionStore()
   const [customAmount, setCustomAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const myBudget = myParticipantId ? (teamBudgets[myParticipantId] ?? 0) : 0
+  const myBudget = myId ? (teamBudgets[myId] ?? 0) : 0
   const currentBidder = participants.find(p => p.id === currentBidderId)
-  const isMyBid = currentBidderId === myParticipantId
+  const isMyBid = currentBidderId === myId
 
   // Countdown timer
   useEffect(() => {
@@ -54,11 +54,15 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
     setLoading(true)
     setError('')
     const result = await placeBid({ roomCode, participantId: myId, amount })
-    if (result.error) setError(result.error)
-    if (result.bid && result.roomUpdate) applyBidPlaced(result.bid, result.roomUpdate)
-    setLoading(false)
-    setCustomAmount('')
-  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode, applyBidPlaced])
+    if (result.error) {
+      setError(result.error)
+      setLoading(false)
+    } else {
+      // Bid was placed successfully - SSE will update the state via applyBidPlaced
+      setCustomAmount('')
+      setLoading(false)
+    }
+  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode])
 
   const handleCustomBid = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -69,6 +73,8 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
   const isTimerCritical = timeLeft <= 10 && timeLeft > 0
   const minNextBid = currentBid > 0 ? currentBid + 500_000 : 1_000_000
   const timerPercent = timerEnd ? Math.max(0, ((timerEnd - Date.now()) / ((useAuctionStore.getState().room?.timerSeconds ?? 60) * 1000)) * 100) : 0
+
+
 
   if (!currentPlayer) return null
 
