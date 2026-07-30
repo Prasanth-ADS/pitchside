@@ -172,14 +172,16 @@ export const useAuctionStore = create<AuctionState>()(
         chatMessages: [...s.chatMessages.filter((entry) => entry.id !== msg.id), msg].slice(-200),
       })),
 
-    applyParticipantJoined: (participant) =>
-      set((s) => ({
+    applyParticipantJoined: (participant) => {
+      console.log('[v0] applyParticipantJoined called:', participant.displayName)
+      return set((s) => ({
         participants: [...s.participants.filter((p) => p.id !== participant.id), participant],
         teamBudgets: {
           ...s.teamBudgets,
           [participant.id]: participant.budgetRemaining,
         },
-      })),
+      }))
+    },
 
     applyParticipantLeft: (participantId) =>
       set((s) => ({

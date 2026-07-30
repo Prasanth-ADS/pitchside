@@ -96,7 +96,9 @@ function handleEvent(type: SSEEventType, payload: unknown, store: ReturnType<typ
       break
     }
     case 'participant:joined': {
+      console.log('[v0] participant:joined event received:', payload)
       store.applyParticipantJoined(payload as Participant)
+      console.log('[v0] participants after join:', store.participants.length)
       break
     }
     case 'participant:left': {
