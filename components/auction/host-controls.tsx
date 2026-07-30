@@ -44,39 +44,40 @@ export function HostControls({ roomCode, myId }: Props) {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-56 bg-card border border-border rounded-xl shadow-xl z-50 p-3 space-y-2">
+        <div className="absolute top-full right-0 mt-2 w-64 bg-card border border-border rounded-xl shadow-xl z-50 p-4 space-y-3">
+          {/* Skip Player button - prominent position */}
+          <Button
+            onClick={handleFinalizeSale}
+            disabled={loading}
+            className="w-full bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
+          >
+            <SkipForward className="w-4 h-4" />
+            {currentBid > 0 ? 'Finalize Sale' : 'Skip Player'}
+          </Button>
+
           {/* Current info */}
-          <div className="text-xs text-muted-foreground mb-3 p-2 bg-background rounded-lg">
-            <div className="font-semibold text-foreground">{currentPlayer.name}</div>
-            <div className="mt-1">
+          <div className="text-xs text-muted-foreground p-3 bg-background rounded-lg border border-border/50">
+            <div className="font-semibold text-foreground mb-2">{currentPlayer.name}</div>
+            <div className="space-y-1">
               {currentBid > 0 ? (
                 <>
                   <div>Current bid: <span className="font-bold text-primary">{formatCurrency(currentBid)}</span></div>
                   <div>By: <span className="font-bold">{currentBidder?.displayName || 'Unknown'}</span></div>
                 </>
               ) : (
-                <div className="text-muted-foreground">No bids yet</div>
+                <div className="text-muted-foreground italic">No bids yet</div>
               )}
             </div>
           </div>
 
-          {/* Quick actions */}
-          <Button
-            onClick={handleFinalizeSale}
-            disabled={loading}
-            className="w-full bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 rounded-lg flex items-center justify-center gap-2"
-          >
-            <SkipForward className="w-3 h-3" />
-            {currentBid > 0 ? 'Finalize Sale' : 'Skip Player'}
-          </Button>
-
-          <div className="space-y-2 text-xs text-muted-foreground">
-            <p>⏱️ Timer auto-finalizes on expiry</p>
-            <p>📍 Click to finalize sale immediately</p>
+          {/* Info messages */}
+          <div className="space-y-1.5 text-[11px] text-muted-foreground bg-background rounded-lg p-2">
+            <p className="flex items-center gap-1.5"><span>⏱️</span> Timer auto-finalizes on expiry</p>
+            <p className="flex items-center gap-1.5"><span>✓</span> Or click button to finalize now</p>
           </div>
 
           {error && (
-            <p className="text-xs text-destructive bg-destructive/10 p-2 rounded-lg">{error}</p>
+            <p className="text-xs text-destructive bg-destructive/10 p-2 rounded-lg border border-destructive/20">{error}</p>
           )}
         </div>
       )}

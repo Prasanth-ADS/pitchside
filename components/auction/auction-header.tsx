@@ -1,11 +1,8 @@
 'use client'
 
 import { useAuctionStore } from '@/lib/auction-store'
-import { finalizePlayerSale } from '@/app/actions/rooms'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/utils/format'
-import { useState } from 'react'
 
 interface Props {
   roomCode: string
@@ -15,17 +12,9 @@ interface Props {
 
 export function AuctionHeader({ roomCode, myId, isHost }: Props) {
   const { room, participants, sseStatus, myParticipantId, teamBudgets } = useAuctionStore()
-  const [finalizing, setFinalizing] = useState(false)
 
   const me = participants.find(p => p.id === myParticipantId)
   const myBudget = myParticipantId ? (teamBudgets[myParticipantId] ?? 0) : 0
-
-  async function handleFinalize() {
-    if (!myId) return
-    setFinalizing(true)
-    await finalizePlayerSale({ roomCode, hostParticipantId: myId })
-    setFinalizing(false)
-  }
 
   return (
     <header className="h-14 border-b border-border flex items-center justify-between px-4 flex-shrink-0 gap-4" role="banner">
@@ -66,24 +55,10 @@ export function AuctionHeader({ roomCode, myId, isHost }: Props) {
         </div>
       )}
 
-      {/* Right: SSE status + finalize btn */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5" role="status" aria-label={`Connection status: ${sseStatus}`}>
-          <div className={`w-1.5 h-1.5 rounded-full ${sseStatus === 'connected' ? 'bg-green-500' : sseStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} aria-hidden="true" />
-          <span className="text-[10px] text-muted-foreground hidden sm:block capitalize">{sseStatus}</span>
-        </div>
-        {isHost && room?.status === 'active' && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleFinalize}
-            disabled={finalizing}
-            className="text-xs border-primary/30 text-primary hover:bg-primary/10 h-7"
-            aria-label={finalizing ? 'Finalizing player sale' : 'Finalize player sale and move to next player'}
-          >
-            {finalizing ? 'Finalizing...' : 'Sell & Next'}
-          </Button>
-        )}
+      {/* Right: SSE status */}
+      <div className="flex items-center gap-1.5" role="status" aria-label={`Connection status: ${sseStatus}`}>
+        <div className={`w-1.5 h-1.5 rounded-full ${sseStatus === 'connected' ? 'bg-green-500' : sseStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`} aria-hidden="true" />
+        <span className="text-[10px] text-muted-foreground hidden sm:block capitalize">{sseStatus}</span>
       </div>
     </header>
   )

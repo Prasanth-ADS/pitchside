@@ -22,24 +22,41 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
   const [error, setError] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoFinalizeRef = useRef(false)
 
   const myBudget = myId ? (teamBudgets[myId] ?? 0) : 0
   const currentBidder = participants.find(p => p.id === currentBidderId)
   const isMyBid = currentBidderId === myId
 
-  // Countdown timer
+  // Auto-finalize handler
+  const handleAutoFinalize = useCallback(async () => {
+    if (!myId) return
+    const { finalizePlayerSale } = await import('@/app/actions/rooms')
+    await finalizePlayerSale({ roomCode, hostParticipantId: myId })
+  }, [myId, roomCode])
+
+  // Countdown timer with auto-finalize
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     if (!timerEnd) { setTimeLeft(0); return }
 
+    // Reset auto-finalize flag for new player
+    autoFinalizeRef.current = false
+
     function tick() {
       const remaining = Math.max(0, Math.ceil((timerEnd! - Date.now()) / 1000))
       setTimeLeft(remaining)
+      
+      // Auto-finalize when timer hits 0 (only once, only if host)
+      if (remaining === 0 && myId && isHost && !autoFinalizeRef.current) {
+        autoFinalizeRef.current = true
+        handleAutoFinalize()
+      }
     }
     tick()
     intervalRef.current = setInterval(tick, 200)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [timerEnd])
+  }, [timerEnd, myId, isHost, handleAutoFinalize])
 
   const handleBid = useCallback(async (amount: number) => {
     if (!myId || !currentPlayer || loading) return
