@@ -16,30 +16,47 @@ interface Props {
 }
 
 export function BidPanel({ roomCode, myId, isHost }: Props) {
-  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, myParticipantId, applyBidPlaced } = useAuctionStore()
+  const { currentPlayer, currentBid, currentBidderId, timerEnd, participants, teamBudgets, bidHistory } = useAuctionStore()
   const [customAmount, setCustomAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [timeLeft, setTimeLeft] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoFinalizeRef = useRef(false)
 
-  const myBudget = myParticipantId ? (teamBudgets[myParticipantId] ?? 0) : 0
+  const myBudget = myId ? (teamBudgets[myId] ?? 0) : 0
   const currentBidder = participants.find(p => p.id === currentBidderId)
-  const isMyBid = currentBidderId === myParticipantId
+  const isMyBid = currentBidderId === myId
 
-  // Countdown timer
+  // Auto-finalize handler
+  const handleAutoFinalize = useCallback(async () => {
+    if (!myId) return
+    const { finalizePlayerSale } = await import('@/app/actions/rooms')
+    await finalizePlayerSale({ roomCode, hostParticipantId: myId })
+  }, [myId, roomCode])
+
+  // Countdown timer with auto-finalize
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
     if (!timerEnd) { setTimeLeft(0); return }
 
+    // Reset auto-finalize flag for new player
+    autoFinalizeRef.current = false
+
     function tick() {
       const remaining = Math.max(0, Math.ceil((timerEnd! - Date.now()) / 1000))
       setTimeLeft(remaining)
+      
+      // Auto-finalize when timer hits 0 (only once, only if host)
+      if (remaining === 0 && myId && isHost && !autoFinalizeRef.current) {
+        autoFinalizeRef.current = true
+        handleAutoFinalize()
+      }
     }
     tick()
     intervalRef.current = setInterval(tick, 200)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [timerEnd])
+  }, [timerEnd, myId, isHost, handleAutoFinalize])
 
   const handleBid = useCallback(async (amount: number) => {
     if (!myId || !currentPlayer || loading) return
@@ -54,11 +71,15 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
     setLoading(true)
     setError('')
     const result = await placeBid({ roomCode, participantId: myId, amount })
-    if (result.error) setError(result.error)
-    if (result.bid && result.roomUpdate) applyBidPlaced(result.bid, result.roomUpdate)
-    setLoading(false)
-    setCustomAmount('')
-  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode, applyBidPlaced])
+    if (result.error) {
+      setError(result.error)
+      setLoading(false)
+    } else {
+      // Bid was placed successfully - SSE will update the state via applyBidPlaced
+      setCustomAmount('')
+      setLoading(false)
+    }
+  }, [myId, currentPlayer, loading, currentBid, myBudget, roomCode])
 
   const handleCustomBid = useCallback((e: React.FormEvent) => {
     e.preventDefault()
@@ -68,6 +89,9 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
 
   const isTimerCritical = timeLeft <= 10 && timeLeft > 0
   const minNextBid = currentBid > 0 ? currentBid + 500_000 : 1_000_000
+  const timerPercent = timerEnd ? Math.max(0, ((timerEnd - Date.now()) / ((useAuctionStore.getState().room?.timerSeconds ?? 60) * 1000)) * 100) : 0
+
+
 
   if (!currentPlayer) return null
 
@@ -102,11 +126,11 @@ export function BidPanel({ roomCode, myId, isHost }: Props) {
       </div>
 
       {/* Timer progress bar */}
-      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border" role="progressbar" aria-valuenow={timerPercent} aria-valuemin={0} aria-valuemax={100} aria-label="Auction timer progress">
+      <div className="h-1.5 rounded-full bg-card overflow-hidden border border-border" role="progressbar" aria-valuenow={Math.round(timerPercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Auction timer progress">
         <div
           className="h-full rounded-full transition-all duration-200"
           style={{
-            width: `${timerEnd ? Math.max(0, ((timerEnd - Date.now()) / ((useAuctionStore.getState().room?.timerSeconds ?? 60) * 1000)) * 100) : 0}%`,
+            width: `${timerPercent}%`,
             backgroundColor: isTimerCritical ? '#ef4444' : '#f59e0b',
           }}
         />
